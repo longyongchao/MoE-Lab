@@ -9,6 +9,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
 
+batch_size = 4096
+num_experts = 8
+
 # 定义数据预处理
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
@@ -18,7 +21,6 @@ mnist_test = torchvision.datasets.MNIST(root='./data', train=False, download=Tru
 
 fashion_mnist_train = torchvision.datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
 fashion_mnist_test = torchvision.datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
-
 
 # 修改 Fashion-MNIST 的标签，使其与 MNIST 标签区分开来（加上 10）
 fashion_mnist_train.targets = fashion_mnist_train.targets + 10
@@ -41,8 +43,8 @@ fashion_mnist_classes = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
 combined_classes = mnist_classes + fashion_mnist_classes
 
 # 创建数据加载器
-train_loader = DataLoader(combined_train_data, batch_size=512, shuffle=True)
-test_loader = DataLoader(combined_test_data, batch_size=512, shuffle=False)
+train_loader = DataLoader(combined_train_data, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(combined_test_data, batch_size=batch_size, shuffle=False)
 
 # Define a simple feedforward network (single expert)
 class SingleExpert(nn.Module):
@@ -120,21 +122,30 @@ def one_hot_encoding(labels, num_classes=10):
     # Ensure the identity matrix is created on the same device as labels
     return torch.eye(num_classes, device=labels.device)[labels]
 
-# Training loop
+# Training loop with expert selection tracking
 def train(model, dataloader, optimizer, num_epochs=10):
     model.train()
+    
+    # 初始化专家选择计数器
+    expert_selection_count = torch.zeros(model.num_experts, device=device)
+    
     for epoch in range(num_epochs):
         running_loss = 0.0
         correct = 0
         total = 0
-        # 使用tqdm
+        
+        # 使用tqdm显示进度
         for inputs, labels in tqdm(dataloader):
             inputs, labels = inputs.to(device), labels.to(device)
 
             optimizer.zero_grad()
             
             # Forward pass
-            final_output, expert_outputs, gate_outputs, _ = model(inputs)
+            final_output, expert_outputs, gate_outputs, expert_indices = model(inputs)
+            
+            # 统计专家选择次数
+            for idx in expert_indices:
+                expert_selection_count[idx] += 1
             
             # Convert labels to one-hot encoding
             one_hot_labels = one_hot_encoding(labels, num_classes=len(combined_classes))
@@ -151,17 +162,32 @@ def train(model, dataloader, optimizer, num_epochs=10):
 
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(dataloader):.4f}, Accuracy: {100 * correct / total:.2f}%')
 
-# Test loop
-def test(model, dataloader):
+    # 输出专家选择次数
+    print("\n专家选择次数统计（训练集）：")
+    for i, count in enumerate(expert_selection_count):
+        print(f'专家 {i}: 被选择 {count.item()} 次')
+
+    return expert_selection_count
+
+# Test loop with expert selection tracking
+def test(model, dataloader, dataset_name=""):
     model.eval()
     correct = 0
     total = 0
+    
+    # 初始化专家选择计数器
+    expert_selection_count = torch.zeros(model.num_experts, device=device)
+    
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs, labels = inputs.to(device), labels.to(device)
             
             # Forward pass
-            final_output, _, _, _ = model(inputs)
+            final_output, _, _, expert_indices = model(inputs)
+            
+            # 统计专家选择次数
+            for idx in expert_indices:
+                expert_selection_count[idx] += 1
             
             # Get predictions
             _, predicted = torch.max(final_output, 1)
@@ -169,33 +195,53 @@ def test(model, dataloader):
             correct += (predicted == labels).sum().item()
 
     accuracy = 100 * correct / total
-    print(f'Test Accuracy: {accuracy:.2f}%')
-    return accuracy
+    print(f'\n{dataset_name} 测试集准确率: {accuracy:.2f}%')
+
+    # 输出专家选择次数
+    print(f"\n专家选择次数统计（{dataset_name}）：")
+    for i, count in enumerate(expert_selection_count):
+        print(f'专家 {i}: 被选择 {count.item()} 次')
+
+    return accuracy, expert_selection_count
 
 # # Main experiment
 device = torch.device('cuda:1')
 
 # MoE Model
-moe_model = MoE(output_dim=len(combined_classes), num_experts=2).to(device)
+moe_model = MoE(output_dim=len(combined_classes), num_experts=num_experts).to(device)
 optimizer_moe = optim.Adam(moe_model.parameters(), lr=0.001)
 
 print("\nTraining MoE Model...")
-train(moe_model, train_loader, optimizer_moe, num_epochs=10)
+train_expert_selection = train(moe_model, train_loader, optimizer_moe, num_epochs=10)
+
 print("Testing MoE Model on MNIST and Fashion-MNIST...")
 # Test the model
 print("Testing on combined MNIST and Fashion-MNIST dataset...")
-test_accuracy_combined = test(moe_model, test_loader)
+test_accuracy_combined, combined_expert_selection = test(moe_model, test_loader, dataset_name="MNIST + Fashion-MNIST")
 
 # Test on individual datasets
 print("Testing on MNIST dataset...")
-mnist_test_loader = DataLoader(mnist_test, batch_size=64, shuffle=False)
-test_accuracy_mnist = test(moe_model, mnist_test_loader)
+mnist_test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
+test_accuracy_mnist, mnist_expert_selection = test(moe_model, mnist_test_loader, dataset_name="MNIST")
 
 print("Testing on Fashion-MNIST dataset...")
-fashion_mnist_test_loader = DataLoader(fashion_mnist_test, batch_size=64, shuffle=False)
-test_accuracy_fashion_mnist = test(moe_model, fashion_mnist_test_loader)
+fashion_mnist_test_loader = DataLoader(fashion_mnist_test, batch_size=batch_size, shuffle=False)
+test_accuracy_fashion_mnist, fashion_mnist_expert_selection = test(moe_model, fashion_mnist_test_loader, dataset_name="Fashion-MNIST")
 
 # Show the test results
 print(f"Combined Test Accuracy: {test_accuracy_combined:.2f}%")
 print(f"MNIST Test Accuracy: {test_accuracy_mnist:.2f}%")
 print(f"Fashion-MNIST Test Accuracy: {test_accuracy_fashion_mnist:.2f}%")
+
+# 按选择次数从高到低排序专家选择结果
+def print_sorted_expert_selection(expert_selection_count, dataset_name):
+    sorted_indices = torch.argsort(expert_selection_count, descending=True)
+    print(f"\n{dataset_name} 专家选择次数排序：")
+    for idx in sorted_indices:
+        print(f'专家 {idx.item()}: 被选择 {expert_selection_count[idx].item()} 次')
+
+# 输出排序后的专家选择情况
+print_sorted_expert_selection(train_expert_selection, "训练集")
+print_sorted_expert_selection(combined_expert_selection, "MNIST + Fashion-MNIST 测试集")
+print_sorted_expert_selection(mnist_expert_selection, "MNIST 测试集")
+print_sorted_expert_selection(fashion_mnist_expert_selection, "Fashion-MNIST 测试集")
