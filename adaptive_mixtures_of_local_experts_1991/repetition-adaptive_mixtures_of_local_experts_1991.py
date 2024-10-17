@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
 
-batch_size = 4096
-num_experts = 8
+batch_size = 4096 * 4
+num_experts = 4
 
 # 定义数据预处理
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
@@ -48,7 +48,7 @@ test_loader = DataLoader(combined_test_data, batch_size=batch_size, shuffle=Fals
 
 # Define a simple feedforward network (single expert)
 class SingleExpert(nn.Module):
-    def __init__(self, input_dim=28*28, output_dim=10):
+    def __init__(self, input_dim=28*28, output_dim=20):
         super(SingleExpert, self).__init__()
         self.fc1 = nn.Linear(input_dim, 256)
         self.fc2 = nn.Linear(256, 128)
@@ -63,7 +63,7 @@ class SingleExpert(nn.Module):
 
 # Define MoE model with two experts
 class MoE(nn.Module):
-    def __init__(self, input_dim=28*28, output_dim=10, num_experts=2):
+    def __init__(self, input_dim=28*28, output_dim=20, num_experts=4):
         super(MoE, self).__init__()
         self.num_experts = num_experts
         
@@ -168,15 +168,18 @@ def train(model, dataloader, optimizer, num_epochs=10):
         print(f'专家 {i}: 被选择 {count.item()} 次')
 
     return expert_selection_count
-
-# Test loop with expert selection tracking
-def test(model, dataloader, dataset_name=""):
+# Test loop with expert selection tracking (for both dataset-level and class-level)
+def test_with_expert_statistics(model, dataloader, dataset_name="", num_classes=20):
     model.eval()
     correct = 0
     total = 0
     
-    # 初始化专家选择计数器
+    # 初始化专家选择计数器（数据集层面）
     expert_selection_count = torch.zeros(model.num_experts, device=device)
+    
+    # 初始化每个类别的专家选择计数器（类别层面）
+    class_expert_selection_count = torch.zeros(num_classes, model.num_experts, device=device)
+    class_sample_count = torch.zeros(num_classes, device=device)  # 每个类别的样本计数
     
     with torch.no_grad():
         for inputs, labels in dataloader:
@@ -185,9 +188,14 @@ def test(model, dataloader, dataset_name=""):
             # Forward pass
             final_output, _, _, expert_indices = model(inputs)
             
-            # 统计专家选择次数
+            # 统计专家选择次数（数据集层面）
             for idx in expert_indices:
                 expert_selection_count[idx] += 1
+            
+            # 统计专家选择次数（类别层面）
+            for i, label in enumerate(labels):
+                class_expert_selection_count[label, expert_indices[i]] += 1
+                class_sample_count[label] += 1  # 统计每个类别的样本数量
             
             # Get predictions
             _, predicted = torch.max(final_output, 1)
@@ -197,12 +205,24 @@ def test(model, dataloader, dataset_name=""):
     accuracy = 100 * correct / total
     print(f'\n{dataset_name} 测试集准确率: {accuracy:.2f}%')
 
-    # 输出专家选择次数
-    print(f"\n专家选择次数统计（{dataset_name}）：")
+    # 输出专家选择次数统计（数据集层面）
+    print(f"\n{dataset_name} 专家选择次数统计（数据集层面）：")
     for i, count in enumerate(expert_selection_count):
-        print(f'专家 {i}: 被选择 {count.item()} 次')
+        print(f'专家 {i}: 被选择 {count.item()} 次，占比 {100 * count.item() / total:.2f}%')
 
-    return accuracy, expert_selection_count
+    # 输出专家选择次数统计（类别层面）
+    print(f"\n{dataset_name} 专家选择次数统计（类别层面）：")
+    for class_idx in range(num_classes):
+        print(f'类别 {class_idx} 的专家选择情况:')
+        for expert_idx in range(model.num_experts):
+            count = class_expert_selection_count[class_idx, expert_idx]
+            if class_sample_count[class_idx] > 0:
+                percentage = 100 * count.item() / class_sample_count[class_idx].item()
+            else:
+                percentage = 0.0
+            print(f'  专家 {expert_idx}: 被选择 {count.item()} 次，占比 {percentage:.2f}%')
+
+    return accuracy, expert_selection_count, class_expert_selection_count, class_sample_count
 
 # # Main experiment
 device = torch.device('cuda:1')
@@ -215,33 +235,50 @@ print("\nTraining MoE Model...")
 train_expert_selection = train(moe_model, train_loader, optimizer_moe, num_epochs=10)
 
 print("Testing MoE Model on MNIST and Fashion-MNIST...")
-# Test the model
-print("Testing on combined MNIST and Fashion-MNIST dataset...")
-test_accuracy_combined, combined_expert_selection = test(moe_model, test_loader, dataset_name="MNIST + Fashion-MNIST")
 
 # Test on individual datasets
 print("Testing on MNIST dataset...")
 mnist_test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
-test_accuracy_mnist, mnist_expert_selection = test(moe_model, mnist_test_loader, dataset_name="MNIST")
+test_accuracy_mnist, mnist_expert_selection, mnist_class_expert_selection, mnist_class_sample_count = test_with_expert_statistics(
+    moe_model, mnist_test_loader, dataset_name="MNIST", num_classes=len(combined_classes))
 
 print("Testing on Fashion-MNIST dataset...")
 fashion_mnist_test_loader = DataLoader(fashion_mnist_test, batch_size=batch_size, shuffle=False)
-test_accuracy_fashion_mnist, fashion_mnist_expert_selection = test(moe_model, fashion_mnist_test_loader, dataset_name="Fashion-MNIST")
+test_accuracy_fashion_mnist, fashion_mnist_expert_selection, fashion_mnist_class_expert_selection, fashion_mnist_class_sample_count = test_with_expert_statistics(
+    moe_model, fashion_mnist_test_loader, dataset_name="Fashion-MNIST", num_classes=len(combined_classes))
 
-# Show the test results
-print(f"Combined Test Accuracy: {test_accuracy_combined:.2f}%")
-print(f"MNIST Test Accuracy: {test_accuracy_mnist:.2f}%")
-print(f"Fashion-MNIST Test Accuracy: {test_accuracy_fashion_mnist:.2f}%")
+# Combine MNIST and Fashion-MNIST results for dataset-level statistics
+combined_expert_selection = mnist_expert_selection + fashion_mnist_expert_selection
+total_samples = mnist_class_sample_count.sum().item() + fashion_mnist_class_sample_count.sum().item()
 
-# 按选择次数从高到低排序专家选择结果
-def print_sorted_expert_selection(expert_selection_count, dataset_name):
+# 输出合并后的专家选择情况（数据集层面）
+print(f"\n合并后的专家选择次数统计（数据集层面）：")
+for i, count in enumerate(combined_expert_selection):
+    print(f'专家 {i}: 被选择 {count.item()} 次，占比 {100 * count.item() / total_samples:.2f}%')
+
+# 输出排序后的专家选择情况（数据集层面）
+def print_sorted_expert_selection(expert_selection_count, total_samples, dataset_name):
     sorted_indices = torch.argsort(expert_selection_count, descending=True)
-    print(f"\n{dataset_name} 专家选择次数排序：")
+    print(f"\n{dataset_name} 专家选择次数排序（数据集层面）：")
     for idx in sorted_indices:
-        print(f'专家 {idx.item()}: 被选择 {expert_selection_count[idx].item()} 次')
+        print(f'专家 {idx.item()}: 被选择 {expert_selection_count[idx].item()} 次，占比 {100 * expert_selection_count[idx].item() / total_samples:.2f}%')
 
 # 输出排序后的专家选择情况
-print_sorted_expert_selection(train_expert_selection, "训练集")
-print_sorted_expert_selection(combined_expert_selection, "MNIST + Fashion-MNIST 测试集")
-print_sorted_expert_selection(mnist_expert_selection, "MNIST 测试集")
-print_sorted_expert_selection(fashion_mnist_expert_selection, "Fashion-MNIST 测试集")
+print_sorted_expert_selection(combined_expert_selection, total_samples, "MNIST + Fashion-MNIST")
+
+# 输出类别层面的专家选择情况
+def print_class_expert_selection(class_expert_selection_count, class_sample_count, dataset_name):
+    print(f"\n{dataset_name} 专家选择次数统计（类别层面）：")
+    for class_idx in range(class_expert_selection_count.size(0)):
+        print(f'类别 {class_idx} 的专家选择情况:')
+        for expert_idx in range(class_expert_selection_count.size(1)):
+            count = class_expert_selection_count[class_idx, expert_idx]
+            if class_sample_count[class_idx] > 0:
+                percentage = 100 * count.item() / class_sample_count[class_idx].item()
+            else:
+                percentage = 0.0
+            print(f'  专家 {expert_idx}: 被选择 {count.item()} 次，占比 {percentage:.2f}%')
+
+# 输出类别层面的专家选择情况
+print_class_expert_selection(mnist_class_expert_selection, mnist_class_sample_count, "MNIST")
+print_class_expert_selection(fashion_mnist_class_expert_selection, fashion_mnist_class_sample_count, "Fashion-MNIST")
