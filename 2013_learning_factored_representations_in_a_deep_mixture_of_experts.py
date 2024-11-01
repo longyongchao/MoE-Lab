@@ -27,13 +27,13 @@ num_epochs = (m, n)是两阶段的训练方式：
 """
 # num_epochs = (0, 10)
 # num_epochs = (10, 0)
-# num_epochs = (2, 8)
-num_epochs = (8, 2)
+# num_epochs = (1, 9)
+num_epochs = (9, 1)
 
-method = "DMoE"
+method = "He_2layerGating_DMoE"
 
 if num_epochs[0] == 0:
-    method = "VanillaMoE"
+    method = "He_2layerGating_VanillaMoE"
 
 
 # 创建数据加载器
