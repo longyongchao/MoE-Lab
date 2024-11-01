@@ -1,10 +1,10 @@
 import torch
 import torch.optim as optim
 
-from local_models import learning_factored_representations_in_a_deep_mixture_of_experts as Model
+from local_models import models as Model
 from local_datasets import mnist_and_fashion_mnist
 from evaluation import test
-from local_trainer import learning_factored_representations_in_a_deep_mixture_of_experts as Trainer
+from local_trainer import trainer as Trainer
 from utils import set_seed, save_model
 import time
 
