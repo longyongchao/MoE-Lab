@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
 
-batch_size = 4096 * 4
+batch_size = 1024
 num_experts = 4
 
 # 定义数据预处理
@@ -38,9 +38,12 @@ print(f"测试集样本数: {len(combined_test_data)}")
 mnist_classes = [str(i) for i in range(10)]  # MNIST 类别是 '0' 到 '9'
 fashion_mnist_classes = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
                          'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']  # Fashion-MNIST 类别
+            
 
 # 合并 MNIST 和 Fashion-MNIST 的类别名称
 combined_classes = mnist_classes + fashion_mnist_classes
+
+print(combined_classes)
 
 # 创建数据加载器
 train_loader = DataLoader(combined_train_data, batch_size=batch_size, shuffle=True)
