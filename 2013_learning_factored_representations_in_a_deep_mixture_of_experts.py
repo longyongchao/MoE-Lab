@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 
-from local_models import adaptive_mixtures_of_local_experts as Model
+from local_models import learning_factored_representations_in_a_deep_mixture_of_experts as Model
 from local_datasets import mnist_and_fashion_mnist
 from evaluation import test
 from local_trainer import adaptive_mixtures_of_local_experts as Trainer
