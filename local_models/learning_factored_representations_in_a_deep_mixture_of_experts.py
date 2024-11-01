@@ -6,9 +6,9 @@ import torch.nn as nn
 class SingleExpert(nn.Module):
     def __init__(self, input_dim=28*28, output_dim=20):
         super(SingleExpert, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.fc2 = nn.Linear(256, 64)
-        self.fc3 = nn.Linear(64, output_dim)
+        self.fc1 = nn.Linear(input_dim, 128)
+        self.fc2 = nn.Linear(128, 32)
+        self.fc3 = nn.Linear(32, output_dim)
     
     def _initialize_weights(self):
         # He 初始化用于 ReLU 激活函数

@@ -30,7 +30,7 @@ num_epochs = (m, n)是两阶段的训练方式：
 # num_epochs = (1, 9)
 num_epochs = (9, 1)
 
-method = "He_2layerGating_DMoE"
+method = "He_784_128_32_20_2layerGating_DMoE"
 
 if num_epochs[0] == 0:
     method = "He_2layerGating_VanillaMoE"
