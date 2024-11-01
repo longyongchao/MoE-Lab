@@ -14,8 +14,8 @@ set_seed(0)
 torch.autograd.set_detect_anomaly(True)
 
 batch_size = 128
-num_experts = 4
-device = torch.device('cuda')
+num_experts = 20
+device = torch.device('cuda:0')
 lr = 0.0005
 margin_threshold = 0.01
 
@@ -25,16 +25,20 @@ num_epochs = (m, n)是两阶段的训练方式：
     2. n表示第二阶段训练的epoch数，取消DMoE的硬约束。
 如果希望复现1991年Adaptive Mixtures of Local Experts的方法，请设置num_epochs = (0, n)
 """
-# num_epochs = (0, 10)
-# num_epochs = (10, 0)
-# num_epochs = (1, 9)
-num_epochs = (9, 1)
+num_epochs = (0, 10)
+num_epochs = (10, 0)
+num_epochs = (2, 8)
+num_epochs = (8, 2)
 
-method = "He_784_128_32_20_2layerGating_DMoE"
+expert_dim = "expert784-20_"
+gating_dim = f"gating784-50_{num_experts}_"
+
+method = "He_DMoE_"
 
 if num_epochs[0] == 0:
-    method = "He_2layerGating_VanillaMoE"
+    method = "He_VanillaMoE_"
 
+method = method + f"{expert_dim}{gating_dim}"
 
 # 创建数据加载器
 train_loader, test_loader = mnist_and_fashion_mnist.get_combined_datasets(batch_size=batch_size)
@@ -52,7 +56,7 @@ train_expert_selection = Trainer.train(moe_model, train_loader, optimizer_moe, d
 
 timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-file_name = f"{method}_{timestamp}_{num_experts}_epochs_{num_epochs}_lr_{lr}_margin_{margin_threshold}"
+file_name = f"{timestamp}_{method}_epochs{num_epochs}_lr{lr}_margin{margin_threshold}"
 
 test(
     combined_classes=combined_classes, 

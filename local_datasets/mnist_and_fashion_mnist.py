@@ -52,7 +52,7 @@ def get_minist_datasets(batch_size=64):
 
     return mnist_train_loader, mnist_test_loader
 
-def get_fashion_mnist_datasets(batch_size=64):
+def get_fashion_mnist_datasets(batch_size=64, origin=False):
     # 定义数据预处理
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
@@ -60,9 +60,9 @@ def get_fashion_mnist_datasets(batch_size=64):
     fashion_mnist_train = torchvision.datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
     fashion_mnist_test = torchvision.datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
 
-    # 修改 Fashion-MNIST 的标签，使其与 MNIST 标签区分开来（加上 10）
-    fashion_mnist_train.targets = fashion_mnist_train.targets + 10
-    fashion_mnist_test.targets = fashion_mnist_test.targets + 10
+    if not origin:
+        fashion_mnist_train.targets = fashion_mnist_train.targets + 10
+        fashion_mnist_test.targets = fashion_mnist_test.targets + 10
 
 
     fashion_mnist_train_loader = DataLoader(fashion_mnist_train, batch_size=batch_size, shuffle=True)

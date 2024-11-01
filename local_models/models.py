@@ -6,26 +6,17 @@ import torch.nn as nn
 class SingleExpert(nn.Module):
     def __init__(self, input_dim=28*28, output_dim=20):
         super(SingleExpert, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 128)
-        self.fc2 = nn.Linear(128, 32)
-        self.fc3 = nn.Linear(32, output_dim)
+        self.fc1 = nn.Linear(input_dim, output_dim)
     
     def _initialize_weights(self):
         # He 初始化用于 ReLU 激活函数
         nn.init.kaiming_normal_(self.fc1.weight, nonlinearity='relu')
-        nn.init.kaiming_normal_(self.fc2.weight, nonlinearity='relu')
-        nn.init.kaiming_normal_(self.fc3.weight, nonlinearity='linear')  # 输出层没有激活函数，使用 'linear'
-        
         # 偏置初始化为 0
         nn.init.zeros_(self.fc1.bias)
-        nn.init.zeros_(self.fc2.bias)
-        nn.init.zeros_(self.fc3.bias)
 
     def forward(self, x):
         x = x.view(-1, 28*28)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = self.fc1(x)
         return x
 
 
@@ -48,6 +39,7 @@ class MoE(nn.Module):
         
         # 定义门控网络（决定使用哪个专家）,双层感知器
         self.gating_network = nn.Sequential(
+            # nn.Linear(input_dim, num_experts),
             nn.Linear(input_dim, 50),
             nn.ReLU(),
             nn.Linear(50, num_experts)
