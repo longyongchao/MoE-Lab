@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 
 from local_models import models as Model
-from local_datasets import mnist_and_fashion_mnist
+from local_datasets import mnist_family
 from evaluation import test
 from local_trainer import trainer as Trainer
 from utils import set_seed, save_model
@@ -13,11 +13,11 @@ import time
 set_seed(0)
 torch.autograd.set_detect_anomaly(True)
 
-batch_size = 128
-num_experts = 20
+batch_size = 64
+num_experts = 4
 device = torch.device('cuda:0')
-lr = 0.0005
-margin_threshold = 0.01
+lr = 0.001
+margin_threshold = 1.0
 
 """
 num_epochs = (m, n)是两阶段的训练方式：
@@ -41,10 +41,10 @@ if num_epochs[0] == 0:
 method = method + f"{expert_dim}{gating_dim}"
 
 # 创建数据加载器
-train_loader, test_loader = mnist_and_fashion_mnist.get_combined_datasets(batch_size=batch_size)
+train_loader, test_loader = mnist_family.get_combined_datasets(batch_size=batch_size)
 
 # 合并 MNIST 和 Fashion-MNIST 的类别名称
-combined_classes = mnist_and_fashion_mnist.get_combined_label()
+combined_classes = mnist_family.get_combined_label()
 
 # MoE Model
 moe_model = Model.MoE(output_dim=len(combined_classes), num_experts=num_experts, margin_threshold=margin_threshold).to(device)

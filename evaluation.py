@@ -2,7 +2,7 @@ import torch
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
-from local_datasets import mnist_and_fashion_mnist
+from local_datasets import mnist_family
 
 
 # Save heatmap function
@@ -54,14 +54,14 @@ def test(combined_classes, moe_model, device, batch_size=64, heatmap_file_name="
     combined_class_sample_count = torch.zeros(20, device=device)
 
     # Test on MNIST dataset
-    _, mnist_test_loader = mnist_and_fashion_mnist.get_minist_datasets(batch_size=batch_size)
+    _, mnist_test_loader = mnist_family.get_minist_datasets(batch_size=batch_size)
     mnist_acc, mnist_class_expert_selection, mnist_class_sample_count = test_with_expert_statistics(
         moe_model, mnist_test_loader, device, num_classes=20)
     combined_class_expert_selection_count[:10, :] = mnist_class_expert_selection[:10, :]
     combined_class_sample_count[:10] = mnist_class_sample_count[:10]
 
     # Test on Fashion-MNIST dataset
-    _, fashion_mnist_test_loader = mnist_and_fashion_mnist.get_fashion_mnist_datasets(batch_size=batch_size)
+    _, fashion_mnist_test_loader = mnist_family.get_fashion_mnist_datasets(batch_size=batch_size)
     fashion_mnist_acc, fashion_mnist_class_expert_selection, fashion_mnist_class_sample_count = test_with_expert_statistics(
         moe_model, fashion_mnist_test_loader, device, num_classes=20)
     combined_class_expert_selection_count[10:, :] = fashion_mnist_class_expert_selection[10:, :]

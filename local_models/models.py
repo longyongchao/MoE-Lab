@@ -4,20 +4,15 @@ import torch.nn as nn
 
 # Define a simple feedforward network (single expert)
 class SingleExpert(nn.Module):
-    def __init__(self, input_dim=28*28, output_dim=20):
+    def __init__(self, input_dim=28*28, output_dim=57):  # 57: 10 (Fashion-MNIST) + 47 (EMNIST)
         super(SingleExpert, self).__init__()
         self.fc1 = nn.Linear(input_dim, output_dim)
-    
-    def _initialize_weights(self):
-        # He 初始化用于 ReLU 激活函数
-        nn.init.kaiming_normal_(self.fc1.weight, nonlinearity='relu')
-        # 偏置初始化为 0
-        nn.init.zeros_(self.fc1.bias)
 
     def forward(self, x):
         x = x.view(-1, 28*28)
         x = self.fc1(x)
         return x
+
 
 
 """
