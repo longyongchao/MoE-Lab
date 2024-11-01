@@ -15,7 +15,8 @@ class SingleExpert(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-# Define MoE model with two experts
+    
+    
 class MoE(nn.Module):
     def __init__(self, input_dim=28*28, output_dim=20, num_experts=4):
         super(MoE, self).__init__()

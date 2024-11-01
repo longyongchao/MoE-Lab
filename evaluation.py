@@ -1,111 +1,92 @@
 import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+import os
 from local_datasets import mnist_and_fashion_mnist
 
 
-# Test loop with expert selection tracking (for both dataset-level and class-level)
-def test_with_expert_statistics(model, dataloader, device, dataset_name="", num_classes=20):
+# Save heatmap function
+def save_heatmap(data, xlabel, ylabel, title, yticklabels, save_dir="heatmaps", heatmap_file_name="heatmap.png"):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(data, annot=True, cmap="YlGnBu", fmt=".2f", yticklabels=yticklabels)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    save_path = os.path.join(save_dir, f"{heatmap_file_name}.png")
+    plt.savefig(save_path)
+    print('Heatmap saved to:', save_path)
+    plt.close()
+
+# Test function with expert statistics
+def test_with_expert_statistics(model, dataloader, device, num_classes=20):
     model.eval()
-    correct = 0
-    total = 0
-    
-    # 初始化专家选择计数器（数据集层面）
-    expert_selection_count = torch.zeros(model.num_experts, device=device)
-    
-    # 初始化每个类别的专家选择计数器（类别层面）
+    correct, total = 0, 0
     class_expert_selection_count = torch.zeros(num_classes, model.num_experts, device=device)
-    class_sample_count = torch.zeros(num_classes, device=device)  # 每个类别的样本计数
+    class_sample_count = torch.zeros(num_classes, device=device)
     
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs, labels = inputs.to(device), labels.to(device)
-            
-            # Forward pass
             final_output, _, _, expert_indices = model(inputs)
             
-            # 统计专家选择次数（数据集层面）
-            for idx in expert_indices:
-                expert_selection_count[idx] += 1
-            
-            # 统计专家选择次数（类别层面）
             for i, label in enumerate(labels):
-                class_expert_selection_count[label, expert_indices[i]] += 1
-                class_sample_count[label] += 1  # 统计每个类别的样本数量
+                # Ensure labels are correctly adjusted for Fashion-MNIST (label_offset = 10)
+                adjusted_label = label.item()
+                assert 0 <= adjusted_label < num_classes, f"Adjusted label {adjusted_label} out of bounds for {num_classes} classes."
+                
+                expert_idx = expert_indices[i]
+                class_expert_selection_count[adjusted_label, expert_idx] += 1
+                class_sample_count[adjusted_label] += 1
             
-            # Get predictions
             _, predicted = torch.max(final_output, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
     accuracy = 100 * correct / total
-    print(f'\n{dataset_name} 测试集准确率: {accuracy:.2f}%')
+    return accuracy, class_expert_selection_count, class_sample_count
 
-    # 输出专家选择次数统计（数据集层面）
-    print(f"\n{dataset_name} 专家选择次数统计（数据集层面）：")
-    for i, count in enumerate(expert_selection_count):
-        print(f'专家 {i}: 被选择 {count.item()} 次，占比 {100 * count.item() / total:.2f}%')
+# Main test function
+def test(combined_classes, moe_model, device, batch_size=64, heatmap_file_name=""):
+    # Initialize combined expert selection and sample count for both datasets
+    combined_class_expert_selection_count = torch.zeros(20, moe_model.num_experts, device=device)
+    combined_class_sample_count = torch.zeros(20, device=device)
 
-    # 输出专家选择次数统计（类别层面）
-    print(f"\n{dataset_name} 专家选择次数统计（类别层面）：")
-    for class_idx in range(num_classes):
-        print(f'类别 {class_idx} 的专家选择情况:')
-        for expert_idx in range(model.num_experts):
-            count = class_expert_selection_count[class_idx, expert_idx]
-            if class_sample_count[class_idx] > 0:
-                percentage = 100 * count.item() / class_sample_count[class_idx].item()
-            else:
-                percentage = 0.0
-            print(f'  专家 {expert_idx}: 被选择 {count.item()} 次，占比 {percentage:.2f}%')
-
-    return accuracy, expert_selection_count, class_expert_selection_count, class_sample_count
-
-
-def test(combined_classes, moe_model, device, batch_size=64):
-    
-    print("Testing MoE Model on MNIST and Fashion-MNIST...")
-
-    # Test on individual datasets
-    print("Testing on MNIST dataset...")
+    # Test on MNIST dataset
     _, mnist_test_loader = mnist_and_fashion_mnist.get_minist_datasets(batch_size=batch_size)
-    test_accuracy_mnist, mnist_expert_selection, mnist_class_expert_selection, mnist_class_sample_count = test_with_expert_statistics(
-        moe_model, mnist_test_loader, device, dataset_name="MNIST", num_classes=len(combined_classes))
+    mnist_acc, mnist_class_expert_selection, mnist_class_sample_count = test_with_expert_statistics(
+        moe_model, mnist_test_loader, device, num_classes=20)
+    combined_class_expert_selection_count[:10, :] = mnist_class_expert_selection[:10, :]
+    combined_class_sample_count[:10] = mnist_class_sample_count[:10]
 
-    print("Testing on Fashion-MNIST dataset...")
+    # Test on Fashion-MNIST dataset
     _, fashion_mnist_test_loader = mnist_and_fashion_mnist.get_fashion_mnist_datasets(batch_size=batch_size)
-    test_accuracy_fashion_mnist, fashion_mnist_expert_selection, fashion_mnist_class_expert_selection, fashion_mnist_class_sample_count = test_with_expert_statistics(
-        moe_model, fashion_mnist_test_loader, device, dataset_name="Fashion-MNIST", num_classes=len(combined_classes))
+    fashion_mnist_acc, fashion_mnist_class_expert_selection, fashion_mnist_class_sample_count = test_with_expert_statistics(
+        moe_model, fashion_mnist_test_loader, device, num_classes=20)
+    combined_class_expert_selection_count[10:, :] = fashion_mnist_class_expert_selection[10:, :]
+    combined_class_sample_count[10:] = fashion_mnist_class_sample_count[10:]
 
-    # Combine MNIST and Fashion-MNIST results for dataset-level statistics
-    combined_expert_selection = mnist_expert_selection + fashion_mnist_expert_selection
-    total_samples = mnist_class_sample_count.sum().item() + fashion_mnist_class_sample_count.sum().item()
+    # Calculate combined expert selection percentages
+    combined_expert_selection_percentages = torch.zeros_like(combined_class_expert_selection_count)
+    for class_idx in range(20):
+        if combined_class_sample_count[class_idx] > 0:
+            combined_expert_selection_percentages[class_idx] = 100 * combined_class_expert_selection_count[class_idx] / combined_class_sample_count[class_idx]
+    
+    all_acc = (mnist_acc + fashion_mnist_acc) / 2
 
-    # 输出合并后的专家选择情况（数据集层面）
-    print(f"\n合并后的专家选择次数统计（数据集层面）：")
-    for i, count in enumerate(combined_expert_selection):
-        print(f'专家 {i}: 被选择 {count.item()} 次，占比 {100 * count.item() / total_samples:.2f}%')
+    # Save heatmap
+    save_heatmap(
+        combined_expert_selection_percentages.cpu().numpy(), 
+        xlabel="Experts", 
+        ylabel="Classes", 
+        title="Combined MNIST and Fashion-MNIST Expert Selection Heatmap",
+        yticklabels=combined_classes,
+        heatmap_file_name=heatmap_file_name + f"_{all_acc:.2f}_{mnist_acc:.2f}_{fashion_mnist_acc:.2f}",
+    )
 
-    # 输出排序后的专家选择情况（数据集层面）
-    def print_sorted_expert_selection(expert_selection_count, total_samples, dataset_name):
-        sorted_indices = torch.argsort(expert_selection_count, descending=True)
-        print(f"\n{dataset_name} 专家选择次数排序（数据集层面）：")
-        for idx in sorted_indices:
-            print(f'专家 {idx.item()}: 被选择 {expert_selection_count[idx].item()} 次，占比 {100 * expert_selection_count[idx].item() / total_samples:.2f}%')
 
-    # 输出排序后的专家选择情况
-    print_sorted_expert_selection(combined_expert_selection, total_samples, "MNIST + Fashion-MNIST")
-
-    # 输出类别层面的专家选择情况
-    def print_class_expert_selection(class_expert_selection_count, class_sample_count, dataset_name):
-        print(f"\n{dataset_name} 专家选择次数统计（类别层面）：")
-        for class_idx in range(class_expert_selection_count.size(0)):
-            print(f'类别 {class_idx} 的专家选择情况:')
-            for expert_idx in range(class_expert_selection_count.size(1)):
-                count = class_expert_selection_count[class_idx, expert_idx]
-                if class_sample_count[class_idx] > 0:
-                    percentage = 100 * count.item() / class_sample_count[class_idx].item()
-                else:
-                    percentage = 0.0
-                print(f'  专家 {expert_idx}: 被选择 {count.item()} 次，占比 {percentage:.2f}%')
-
-    # 输出类别层面的专家选择情况
-    print_class_expert_selection(mnist_class_expert_selection, mnist_class_sample_count, "MNIST")
-    print_class_expert_selection(fashion_mnist_class_expert_selection, fashion_mnist_class_sample_count, "Fashion-MNIST")
+    # Output results
+    print(f"Total Test Accuracy: {all_acc:.2f}%")
+    print(f"MNIST Test Accuracy: {mnist_acc:.2f}%")
+    print(f"Fashion-MNIST Test Accuracy: {fashion_mnist_acc:.2f}%")

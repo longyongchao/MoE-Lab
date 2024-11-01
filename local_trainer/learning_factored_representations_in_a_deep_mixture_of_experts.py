@@ -2,7 +2,6 @@ import torch
 from tqdm import tqdm
 
 
-# Custom loss function for MoE
 def moe_loss(targets, expert_outputs, gate_outputs):
     """
     Compute the loss for the Mixture of Experts model.
@@ -34,30 +33,26 @@ def one_hot_encoding(labels, num_classes=10):
     # Ensure the identity matrix is created on the same device as labels
     return torch.eye(num_classes, device=labels.device)[labels]
 
-# Training loop with expert selection tracking
-def train(model, dataloader, optimizer, device, classes, num_epochs=10):
+
+def train(model, dataloader, optimizer, device, classes, num_epochs=(5, 10)):
     model.train()
     
-    # 初始化专家选择计数器
-    expert_selection_count = torch.zeros(model.num_experts, device=device)
-    
-    for epoch in range(num_epochs):
+    for epoch in range(num_epochs[0] + num_epochs[1]):
         running_loss = 0.0
         correct = 0
         total = 0
+
+        constraint = True if epoch <= num_epochs[0] else False
         
-        # 使用tqdm显示进度
-        for inputs, labels in tqdm(dataloader):
+        # 使用 tqdm 显示进度
+        for step, (inputs, labels) in enumerate(tqdm(dataloader)):
             inputs, labels = inputs.to(device), labels.to(device)
 
             optimizer.zero_grad()
+
             
             # Forward pass
-            final_output, expert_outputs, gate_outputs, expert_indices = model(inputs)
-            
-            # 统计专家选择次数
-            for idx in expert_indices:
-                expert_selection_count[idx] += 1
+            final_output, expert_outputs, gate_outputs, expert_indices = model(inputs, constraint)
             
             # Convert labels to one-hot encoding
             one_hot_labels = one_hot_encoding(labels, num_classes=len(classes))
@@ -74,10 +69,4 @@ def train(model, dataloader, optimizer, device, classes, num_epochs=10):
 
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(dataloader):.4f}, Accuracy: {100 * correct / total:.2f}%')
 
-    # 输出专家选择次数
-    print("\n专家选择次数统计（训练集）：")
-    for i, count in enumerate(expert_selection_count):
-        print(f'专家 {i}: 被选择 {count.item()} 次')
-
-    return expert_selection_count
-
+    return model.expert_selection_count
