@@ -10,14 +10,14 @@ import time
 
 
 # 调用 set_seed 函数，设置随机种子
-set_seed(0)
+set_seed(19940329)
 torch.autograd.set_detect_anomaly(True)
 
 batch_size = 64
 num_experts = 4
 device = torch.device('cuda:0')
-lr = 0.001
-margin_threshold = 0.1
+lr = 0.0005
+margin_threshold = 0.5
 
 """
 num_epochs = (m, n)是两阶段的训练方式：
@@ -25,12 +25,11 @@ num_epochs = (m, n)是两阶段的训练方式：
     2. n表示第二阶段训练的epoch数，取消DMoE的硬约束。
 如果希望复现1991年Adaptive Mixtures of Local Experts的方法，请设置num_epochs = (0, n)
 """
-num_epochs = (0, 15)
-num_epochs = (10, 5)
-num_epochs = (12, 3)
-num_epochs = (13, 2)
-num_epochs = (14, 1)
-num_epochs = (15, 0)
+num_epochs = (0, 10)
+num_epochs = (2, 8)
+num_epochs = (4, 6)
+num_epochs = (8, 2)
+num_epochs = (10, 0)
 
 expert_dim = "expert784-20_"
 gating_dim = f"gating784-50_{num_experts}_"

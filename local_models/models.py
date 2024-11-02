@@ -4,7 +4,8 @@ import torch.nn as nn
 
 # Define a simple feedforward network (single expert)
 class SingleExpert(nn.Module):
-    def __init__(self, input_dim=28*28, output_dim=57):  # 57: 10 (Fashion-MNIST) + 47 (EMNIST)
+    def __init__(self, input_dim=28*28, output_dim=57):  
+        # 57: 10 (Fashion-MNIST) + 47 (EMNIST)
         super(SingleExpert, self).__init__()
         self.fc1 = nn.Linear(input_dim, output_dim)
 
@@ -14,15 +15,10 @@ class SingleExpert(nn.Module):
         return x
 
 
-
 """
 - 引入专家分配约束：我们需要在每个训练步骤中跟踪每个专家的选择次数，并计算这些选择次数的平均值。如果某个专家的选择次数超过了平均值加上一个预设的阈值m，则将该专家的选择概率设为零。
 - 重新归一化 gating 输出：当某个专家的选择概率被设为零后，我们需要重新归一化剩下的专家的 gating 输出，使得这些输出仍然是一个有效的概率分布（即所有 gating 输出的和为 1）。
 """
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 class MoE(nn.Module):
     def __init__(self, input_dim=28*28, output_dim=20, num_experts=4, margin_threshold=0.1):
         super(MoE, self).__init__()
