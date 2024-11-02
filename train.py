@@ -17,7 +17,7 @@ batch_size = 64
 num_experts = 4
 device = torch.device('cuda:0')
 lr = 0.001
-margin_threshold = 1.0
+margin_threshold = 0.1
 
 """
 num_epochs = (m, n)是两阶段的训练方式：
@@ -25,10 +25,12 @@ num_epochs = (m, n)是两阶段的训练方式：
     2. n表示第二阶段训练的epoch数，取消DMoE的硬约束。
 如果希望复现1991年Adaptive Mixtures of Local Experts的方法，请设置num_epochs = (0, n)
 """
-num_epochs = (0, 10)
-num_epochs = (10, 0)
-num_epochs = (2, 8)
-num_epochs = (8, 2)
+num_epochs = (0, 15)
+num_epochs = (10, 5)
+num_epochs = (12, 3)
+num_epochs = (13, 2)
+num_epochs = (14, 1)
+num_epochs = (15, 0)
 
 expert_dim = "expert784-20_"
 gating_dim = f"gating784-50_{num_experts}_"
@@ -45,6 +47,7 @@ train_loader, test_loader = mnist_family.get_combined_datasets(batch_size=batch_
 
 # 合并 MNIST 和 Fashion-MNIST 的类别名称
 combined_classes = mnist_family.get_combined_label()
+dataset_split_point = mnist_family.get_split_point()
 
 # MoE Model
 moe_model = Model.MoE(output_dim=len(combined_classes), num_experts=num_experts, margin_threshold=margin_threshold).to(device)
@@ -63,6 +66,7 @@ test(
     moe_model=moe_model, 
     device=device,
     heatmap_file_name=file_name,
+    split_point=dataset_split_point
 )
 
 save_model(moe_model, optimizer_moe, save_dir="saved_models", model_name=file_name)

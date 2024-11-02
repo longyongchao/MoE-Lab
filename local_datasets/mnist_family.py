@@ -73,3 +73,6 @@ def get_combined_label():
     # Combine all label mappings into one dictionary
     COMBINED_LABEL = FASHION_MNIST_LABELS + EMNIST_LABELS
     return COMBINED_LABEL
+
+def get_split_point():
+    return len(FASHION_MNIST_LABELS)
