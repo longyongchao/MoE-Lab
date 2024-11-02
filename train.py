@@ -10,7 +10,7 @@ import time
 
 
 # 调用 set_seed 函数，设置随机种子
-set_seed(19940329)
+set_seed(42)
 torch.autograd.set_detect_anomaly(True)
 
 device = torch.device('cuda:0')
@@ -21,9 +21,11 @@ gating_hidden_dim = [50] # 门控隐藏层维度，如果需要单线性层，�
 num_experts = 4
 margin_threshold = 0.5
 
+enable_hard_constraint = False
+enable_sparsely_gated_noise = True
+
 batch_size = 64
 lr = 0.0005
-
 
 """
 num_epochs = (m, n)是两阶段的训练方式：
@@ -61,7 +63,9 @@ moe_model = Model.MoE(
     expert_hidden_dim=expert_hidden_dim,
     gating_hidden_dim=gating_hidden_dim,
     num_experts=num_experts, 
-    margin_threshold=margin_threshold
+    margin_threshold=margin_threshold,
+    enable_hard_constraint=enable_hard_constraint,
+    enable_sparsely_gated_noise=enable_sparsely_gated_noise
 ).to(device)
 
 

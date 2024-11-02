@@ -42,7 +42,7 @@ def train(model, dataloader, optimizer, device, classes, num_epochs=(5, 10)):
         correct = 0
         total = 0
 
-        constraint = True if epoch <= num_epochs[0] else False
+        hard_constraint = True if epoch <= num_epochs[0] else False
         
         # 使用 tqdm 显示进度
         for step, (inputs, labels) in enumerate(tqdm(dataloader)):
@@ -52,7 +52,11 @@ def train(model, dataloader, optimizer, device, classes, num_epochs=(5, 10)):
 
             
             # Forward pass
-            final_output, expert_outputs, gate_outputs, expert_indices = model(inputs, constraint)
+            final_output, expert_outputs, gate_outputs, expert_indices = model(
+                inputs, 
+                training=True,
+                hard_constraint=hard_constraint
+            )
             
             # Convert labels to one-hot encoding
             one_hot_labels = one_hot_encoding(labels, num_classes=len(classes))
