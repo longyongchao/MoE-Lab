@@ -167,10 +167,22 @@ class MoE(nn.Module):
             # 为避免除以 0，添加一个小常数 (epsilon)
             gate_outputs = gate_outputs + zero_row_mask * 1e-10
             
-        # 根据门控概率随机选择一个专家
-        # 重新归一化门控概率
-        gate_outputs = torch.softmax(gate_outputs, dim=1)
-        expert_indices = torch.multinomial(gate_outputs, num_samples=self.top_k).squeeze()  # 形状: [batch_size]
+        # 获取每个样本的前 top_k 个最大值和对应的索引
+        topk_values, topk_indices = torch.topk(gate_outputs, self.top_k, dim=1)
+
+        # 对 top_k 的最大值进行 softmax 归一化
+        topk_softmax_values = torch.softmax(topk_values, dim=1)
+
+        # 构造一个与 gate_outputs 形状相同的全零矩阵
+        topk_gate_outputs = torch.zeros_like(gate_outputs)
+
+        # 将 softmax 后的 top_k 值放入对应的位置
+        topk_gate_outputs.scatter_(1, topk_indices, topk_softmax_values)
+
+        # 使用归一化后的 gate 输出进行后续操作
+        gate_outputs = topk_gate_outputs
+        
+        expert_indices = torch.multinomial(gate_outputs, num_samples=1).squeeze()  # 形状: [batch_size]
 
         # 获取每个专家的输出
         expert_outputs = torch.stack([expert(x_flat) for expert in self.experts], dim=1)  # 形状: [batch_size, num_experts, output_dim]

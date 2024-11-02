@@ -4,8 +4,8 @@ import torch.optim as optim
 from local_models import models as Model
 
 # 切换数据集
-# from local_datasets import mnist_family as dataset
-from local_datasets import rgb_mix as dataset
+from local_datasets import mnist_family as dataset
+# from local_datasets import rgb_mix as dataset
 
 from evaluation import test
 from local_trainer import trainer as Trainer
@@ -27,13 +27,14 @@ datasets_info = dataset.get_datasets_info()
 
 expert_hidden_dim = [] # 专家隐藏层维度，如果需要单线性层，则设置[]
 gating_hidden_dim = [50] # 门控隐藏层维度，如果需要单线性层，则设置[]
-num_experts = 8
+num_experts = 4
 DMoE_margin_threshold = 0.5
 SGMoE_w_importance = 0.1
 
 enable_hard_constraint_DMoE = False
 enable_sparsely_gated_noise_SGMoE = True
 enable_soft_constraint_SGMoE = True
+top_k = 2
 
 batch_size = 64
 lr = 0.0005
@@ -48,7 +49,7 @@ num_epochs = (m, n)是两阶段的训练方式：
 # num_epochs = (2, 8)
 # num_epochs = (4, 6)
 # num_epochs = (8, 2)
-num_epochs = (15, 0)
+num_epochs = (10, 0)
 
 expert_dim = f"expert784-{expert_hidden_dim}-20_"
 gating_dim = f"gating784-{gating_hidden_dim}-{num_experts}_"
@@ -76,6 +77,7 @@ moe_model = Model.MoE(
     enable_hard_constraint=enable_hard_constraint_DMoE,
     enable_sparsely_gated_noise=enable_sparsely_gated_noise_SGMoE,
     enable_soft_constraint=enable_soft_constraint_SGMoE,
+    top_k=top_k
 ).to(device)
 
 
