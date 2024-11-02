@@ -13,11 +13,17 @@ import time
 set_seed(19940329)
 torch.autograd.set_detect_anomaly(True)
 
-batch_size = 64
-num_experts = 4
 device = torch.device('cuda:0')
-lr = 0.0005
+
+input_dim = 28 * 28
+expert_hidden_dim = [] # 专家隐藏层维度，如果需要单线性层，则设置[]
+gating_hidden_dim = [50] # 门控隐藏层维度，如果需要单线性层，则设置[]
+num_experts = 4
 margin_threshold = 0.5
+
+batch_size = 64
+lr = 0.0005
+
 
 """
 num_epochs = (m, n)是两阶段的训练方式：
@@ -26,10 +32,10 @@ num_epochs = (m, n)是两阶段的训练方式：
 如果希望复现1991年Adaptive Mixtures of Local Experts的方法，请设置num_epochs = (0, n)
 """
 num_epochs = (0, 10)
-num_epochs = (2, 8)
-num_epochs = (4, 6)
-num_epochs = (8, 2)
-num_epochs = (10, 0)
+# num_epochs = (2, 8)
+# num_epochs = (4, 6)
+# num_epochs = (8, 2)
+# num_epochs = (10, 0)
 
 expert_dim = "expert784-20_"
 gating_dim = f"gating784-50_{num_experts}_"
@@ -49,7 +55,16 @@ combined_classes = mnist_family.get_combined_label()
 dataset_split_point = mnist_family.get_split_point()
 
 # MoE Model
-moe_model = Model.MoE(output_dim=len(combined_classes), num_experts=num_experts, margin_threshold=margin_threshold).to(device)
+moe_model = Model.MoE(
+    input_dim=input_dim,
+    output_dim=len(combined_classes), 
+    expert_hidden_dim=expert_hidden_dim,
+    gating_hidden_dim=gating_hidden_dim,
+    num_experts=num_experts, 
+    margin_threshold=margin_threshold
+).to(device)
+
+
 optimizer_moe = optim.Adam(moe_model.parameters(), lr=lr)
 torch.nn.utils.clip_grad_norm_(moe_model.parameters(), max_norm=1.0) # 梯度裁剪，防止梯度爆炸
 

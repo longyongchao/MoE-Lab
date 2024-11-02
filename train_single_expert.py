@@ -77,7 +77,7 @@ def main():
         return
 
     # Initialize the model, loss function, and optimizer
-    model = models.SingleExpert(input_dim=input_dim, output_dim=output_dim).to(device)
+    model = models.SingleExpert(input_dim=input_dim, num_classes=output_dim).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
