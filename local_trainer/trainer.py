@@ -2,18 +2,7 @@ import torch
 from tqdm import tqdm
 
 
-def moe_loss(targets, expert_outputs, gate_outputs):
-    """
-    Compute the loss for the Mixture of Experts model.
-    
-    Arguments:
-    - targets: Ground truth output vectors, shape [batch_size, output_dim]
-    - expert_outputs: Output vectors from each expert, shape [batch_size, num_experts, output_dim]
-    - gate_outputs: Gating network outputs (probabilities for each expert), shape [batch_size, num_experts]
-    
-    Returns:
-    - loss: Computed loss value
-    """
+def moe_loss(targets, expert_outputs, gate_outputs, soft_constraint_loss):
     # Compute the squared error between targets and each expert's output
     errors = torch.sum((expert_outputs - targets.unsqueeze(1))**2, dim=2)  # Shape: [batch_size, num_experts]
     
@@ -25,9 +14,10 @@ def moe_loss(targets, expert_outputs, gate_outputs):
     
     # Sum over experts and take the log to get the negative log likelihood
     loss = -torch.log(torch.sum(weighted_errors, dim=1) + 1e-8)  # Shape: [batch_size]
+
+    total_loss = loss.mean() + soft_constraint_loss
     
-    # Return the mean loss over the batch
-    return loss.mean()
+    return total_loss
 
 def one_hot_encoding(labels, num_classes=10):
     # Ensure the identity matrix is created on the same device as labels
@@ -62,7 +52,10 @@ def train(model, dataloader, optimizer, device, classes, num_epochs=(5, 10)):
             one_hot_labels = one_hot_encoding(labels, num_classes=len(classes))
             
             # Compute MoE loss
-            loss = moe_loss(one_hot_labels, expert_outputs, gate_outputs)
+            soft_constraint_loss = model.compute_soft_constraint_loss(device)
+
+            loss = moe_loss(one_hot_labels, expert_outputs, gate_outputs, soft_constraint_loss=soft_constraint_loss)
+
             loss.backward()
             optimizer.step()
 

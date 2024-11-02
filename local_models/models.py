@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 
-# Define a simple feedforward network (single expert)
 class SingleExpert(nn.Module):
     def __init__(self, input_dim: int, expert_hidden_dim: list, num_classes: int):  
         super(SingleExpert, self).__init__()
@@ -87,18 +86,14 @@ class GatingNetwork(nn.Module):
             nn.init.kaiming_normal_(layer.weight, nonlinearity='relu')
             nn.init.zeros_(layer.bias)
 
-    def forward(self, x, training=False, if_softmax=True):
+    def forward(self, x, training=False, enable_softmax=False):
         sg_noise = self.noise(x) if (self.noise is not None and training) else 0
         x = self.layers[0](x)
         for layer in self.layers[1:]:
             x = layer(self.relu(x))
-        return self.softmax(x + sg_noise) if if_softmax else x + sg_noise
+        return self.softmax(x + sg_noise) if enable_softmax else x + sg_noise
 
 
-"""
-- 引入专家分配约束：我们需要在每个训练步骤中跟踪每个专家的选择次数，并计算这些选择次数的平均值。如果某个专家的选择次数超过了平均值加上一个预设的阈值m，则将该专家的选择概率设为零。
-- 重新归一化 gating 输出：当某个专家的选择概率被设为零后，我们需要重新归一化剩下的专家的 gating 输出，使得这些输出仍然是一个有效的概率分布（即所有 gating 输出的和为 1）。
-"""
 class MoE(nn.Module):
     def __init__(
         self, 
@@ -108,16 +103,20 @@ class MoE(nn.Module):
         gating_hidden_dim=[50], 
         num_experts=4, 
         margin_threshold=0.1,
+        SGMoE_w_importance=0.1,
         enable_sparsely_gated_noise=False,
         enable_hard_constraint=False,
+        enable_soft_constraint=False,
         top_k=1,
     ):
         super(MoE, self).__init__()
         self.input_dim = input_dim
         self.num_experts = num_experts
         self.margin_threshold = margin_threshold  # m
+        self.SGMoE_w_importance = SGMoE_w_importance  # w
         self.top_k = top_k
         self.enable_hard_constraint = enable_hard_constraint
+        self.enable_soft_constraint = enable_soft_constraint
         
         # 定义专家
         self.experts = nn.ModuleList([SingleExpert(input_dim, expert_hidden_dim, output_dim) for _ in range(num_experts)])
@@ -140,49 +139,60 @@ class MoE(nn.Module):
         training=False, 
         hard_constraint=False
     ):
+        self.training = training
         x_flat = x.view(-1, self.input_dim)  # 将图片展平输入
         
         # 获取门控网络的输出概率
-        gate_outputs = self.gating_network(x_flat, training=training) # 形状: [batch_size, num_experts]
+        gate_outputs = self.gating_network(x_flat, training=training, enable_softmax=False)
 
-        # 克隆 gate_outputs 以避免原地修改
-        gate_outputs_cloned = gate_outputs.clone()
+        if training and (self.enable_hard_constraint or self.enable_soft_constraint):
+            # 计算每个专家的“重要性”，即每个专家在当前 batch 中的门控值总和
+            self.experts_importance = gate_outputs.sum(dim=0)  # 形状: [num_experts]
 
+            self.importance_mean = self.experts_importance.mean()
+
+            
         # 如果 constraint 为 True，则施加专家分配约束
         if self.enable_hard_constraint and hard_constraint and training:
 
-            # 每个 step 重新初始化专家选择概率累计计数
-            self.expert_selection_count = gate_outputs.sum(dim=0)  # 形状: [num_experts]
-            mean_selection = self.expert_selection_count.mean()  # 计算专家分配的平均值
-            overused_experts = (self.expert_selection_count - mean_selection) > self.margin_threshold
+            overused_experts = (self.experts_importance - self.importance_mean) > self.margin_threshold
             
             # 将过度使用的专家的门控概率设为 0
-            gate_outputs_cloned[:, overused_experts] = 0
+            gate_outputs[:, overused_experts] = 0
             
             # 检查是否有任何行的和为 0
-            row_sums = gate_outputs_cloned.sum(dim=1, keepdim=True)
+            row_sums = gate_outputs.sum(dim=1, keepdim=True)
             zero_row_mask = (row_sums == 0)
             
             # 为避免除以 0，添加一个小常数 (epsilon)
-            gate_outputs_cloned = gate_outputs_cloned + zero_row_mask * 1e-10
+            gate_outputs = gate_outputs + zero_row_mask * 1e-10
             
-            # 重新归一化门控概率
-            gate_outputs_cloned = gate_outputs_cloned / gate_outputs_cloned.sum(dim=1, keepdim=True)
-
-        # 调试：检查 gate_outputs_cloned 中是否有无效值
-        if torch.isnan(gate_outputs_cloned).any() or torch.isinf(gate_outputs_cloned).any() or (gate_outputs_cloned < 0).any():
-            print("Invalid values detected in gate_outputs_cloned!")
-            print("gate_outputs_cloned:", gate_outputs_cloned)
-            raise ValueError("gate_outputs_cloned contains invalid values (nan, inf, or negative numbers)")
-
         # 根据门控概率随机选择一个专家
-        expert_indices = torch.multinomial(gate_outputs_cloned, num_samples=self.top_k).squeeze()  # 形状: [batch_size]
+        # 重新归一化门控概率
+        gate_outputs = torch.softmax(gate_outputs, dim=1)
+        expert_indices = torch.multinomial(gate_outputs, num_samples=self.top_k).squeeze()  # 形状: [batch_size]
 
         # 获取每个专家的输出
         expert_outputs = torch.stack([expert(x_flat) for expert in self.experts], dim=1)  # 形状: [batch_size, num_experts, output_dim]
-        expert_outputs = torch.softmax(expert_outputs, dim=2)
+        expert_outputs = torch.softmax(expert_outputs, dim=2) # 因为是分类任务，所以对每个专家的输出进行 softmax
 
         # 收集与采样的专家对应的输出
         final_output = expert_outputs[torch.arange(x.size(0)), expert_indices]  # 形状: [batch_size, output_dim]
         
-        return final_output, expert_outputs, gate_outputs_cloned, expert_indices
+        return final_output, expert_outputs, gate_outputs, expert_indices
+    
+
+    def compute_soft_constraint_loss(self, device):
+        if self.enable_soft_constraint and self.training:
+            # 计算变异系数 CV
+            importance_std = self.experts_importance.std()
+            cv_importance = importance_std / (self.importance_mean + 1e-8)  # 避免除以 0
+
+            # 计算软约束损失 L_importance
+            soft_constraint_loss = self.SGMoE_w_importance * (cv_importance ** 2)
+            
+            # 记录 soft_constraint_loss 以便在训练时加入到总损失中
+            self.soft_constraint_loss = soft_constraint_loss
+        else:
+            self.soft_constraint_loss = torch.tensor(0.0, device=device)
+        return self.soft_constraint_loss

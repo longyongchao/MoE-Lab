@@ -8,9 +8,10 @@ from local_trainer import trainer as Trainer
 from utils import set_seed, save_model
 import time
 
+timestamp = time.strftime("%Y%m%d-%H%M%S")
 
 # 调用 set_seed 函数，设置随机种子
-set_seed(42)
+set_seed(19940329)
 torch.autograd.set_detect_anomaly(True)
 
 device = torch.device('cuda:0')
@@ -19,10 +20,12 @@ input_dim = 28 * 28
 expert_hidden_dim = [] # 专家隐藏层维度，如果需要单线性层，则设置[]
 gating_hidden_dim = [50] # 门控隐藏层维度，如果需要单线性层，则设置[]
 num_experts = 4
-margin_threshold = 0.5
+DMoE_margin_threshold = 0.5
+SGMoE_w_importance = 0.1
 
-enable_hard_constraint = False
-enable_sparsely_gated_noise = True
+enable_hard_constraint_DMoE = False
+enable_sparsely_gated_noise_SGMoE = False
+enable_soft_constraint_SGMoE = True
 
 batch_size = 64
 lr = 0.0005
@@ -33,11 +36,11 @@ num_epochs = (m, n)是两阶段的训练方式：
     2. n表示第二阶段训练的epoch数，取消DMoE的硬约束。
 如果希望复现1991年Adaptive Mixtures of Local Experts的方法，请设置num_epochs = (0, n)
 """
-num_epochs = (0, 10)
+# num_epochs = (0, 10)
 # num_epochs = (2, 8)
 # num_epochs = (4, 6)
 # num_epochs = (8, 2)
-# num_epochs = (10, 0)
+num_epochs = (10, 0)
 
 expert_dim = "expert784-20_"
 gating_dim = f"gating784-50_{num_experts}_"
@@ -63,9 +66,11 @@ moe_model = Model.MoE(
     expert_hidden_dim=expert_hidden_dim,
     gating_hidden_dim=gating_hidden_dim,
     num_experts=num_experts, 
-    margin_threshold=margin_threshold,
-    enable_hard_constraint=enable_hard_constraint,
-    enable_sparsely_gated_noise=enable_sparsely_gated_noise
+    margin_threshold=DMoE_margin_threshold,
+    SGMoE_w_importance=SGMoE_w_importance,
+    enable_hard_constraint=enable_hard_constraint_DMoE,
+    enable_sparsely_gated_noise=enable_sparsely_gated_noise_SGMoE,
+    enable_soft_constraint=enable_soft_constraint_SGMoE,
 ).to(device)
 
 
@@ -75,9 +80,8 @@ torch.nn.utils.clip_grad_norm_(moe_model.parameters(), max_norm=1.0) # 梯度裁
 print("\nTraining MoE Model...")
 train_expert_selection = Trainer.train(moe_model, train_loader, optimizer_moe, device, combined_classes, num_epochs=num_epochs)
 
-timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-file_name = f"{timestamp}_{method}_epochs{num_epochs}_lr{lr}_margin{margin_threshold}"
+file_name = f"{timestamp}_{method}_epochs{num_epochs}_lr{lr}_margin{DMoE_margin_threshold}"
 
 test(
     combined_classes=combined_classes, 
