@@ -2,7 +2,11 @@ import torch
 import torch.optim as optim
 
 from local_models import models as Model
-from local_datasets import mnist_family
+
+# 切换数据集
+# from local_datasets import mnist_family as dataset
+from local_datasets import rgb_mix as dataset
+
 from evaluation import test
 from local_trainer import trainer as Trainer
 from utils import set_seed, save_model
@@ -16,15 +20,19 @@ torch.autograd.set_detect_anomaly(True)
 
 device = torch.device('cuda:0')
 
-input_dim = 28 * 28
+input_dim = dataset.get_input_dim()
+combined_classes = dataset.get_combined_label()
+dataset_split_point = dataset.get_split_point()
+datasets_info = dataset.get_datasets_info()
+
 expert_hidden_dim = [] # 专家隐藏层维度，如果需要单线性层，则设置[]
 gating_hidden_dim = [50] # 门控隐藏层维度，如果需要单线性层，则设置[]
-num_experts = 4
+num_experts = 8
 DMoE_margin_threshold = 0.5
 SGMoE_w_importance = 0.1
 
 enable_hard_constraint_DMoE = False
-enable_sparsely_gated_noise_SGMoE = False
+enable_sparsely_gated_noise_SGMoE = True
 enable_soft_constraint_SGMoE = True
 
 batch_size = 64
@@ -40,10 +48,10 @@ num_epochs = (m, n)是两阶段的训练方式：
 # num_epochs = (2, 8)
 # num_epochs = (4, 6)
 # num_epochs = (8, 2)
-num_epochs = (10, 0)
+num_epochs = (15, 0)
 
-expert_dim = "expert784-20_"
-gating_dim = f"gating784-50_{num_experts}_"
+expert_dim = f"expert784-{expert_hidden_dim}-20_"
+gating_dim = f"gating784-{gating_hidden_dim}-{num_experts}_"
 
 method = "He_DMoE_"
 
@@ -53,11 +61,8 @@ if num_epochs[0] == 0:
 method = method + f"{expert_dim}{gating_dim}"
 
 # 创建数据加载器
-train_loader, test_loader = mnist_family.get_combined_datasets(batch_size=batch_size)
+train_loader, test_loader = dataset.get_combined_datasets(batch_size=batch_size)
 
-# 合并 MNIST 和 Fashion-MNIST 的类别名称
-combined_classes = mnist_family.get_combined_label()
-dataset_split_point = mnist_family.get_split_point()
 
 # MoE Model
 moe_model = Model.MoE(
@@ -88,7 +93,8 @@ test(
     moe_model=moe_model, 
     device=device,
     heatmap_file_name=file_name,
-    split_point=dataset_split_point
+    split_point=dataset_split_point,
+    datasets_info=datasets_info,
 )
 
 save_model(moe_model, optimizer_moe, save_dir="saved_models", model_name=file_name)
